@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 2.8)
+project( Pick_and_place )
+find_package( OpenCV REQUIRED )
+add_executable( Pick_and_place pickandplace.cpp )
+target_link_libraries( Pick_and_place ${OpenCV_LIBS} )

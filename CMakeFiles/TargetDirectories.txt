@@ -1,0 +1,3 @@
+/home/matej/opencv_withoutcam/CMakeFiles/edit_cache.dir
+/home/matej/opencv_withoutcam/CMakeFiles/rebuild_cache.dir
+/home/matej/opencv_withoutcam/CMakeFiles/Pick_and_place.dir
