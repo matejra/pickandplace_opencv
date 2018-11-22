@@ -15,7 +15,7 @@ double min_contour_area = 20;
 double max_contour_area = 400;
 float center_proximity = 7.0;
 double contour_area = 0;
-double table_threshold = 100;
+double holes_threshold = 60;
 double object_threshold = 180;
 int max_rectangle_index = 0;
 bool working_table_limits_found = 0;
@@ -52,13 +52,13 @@ void setLabel(Mat& im, const string label, vector<Point>& contour)
 int main(int argc, char** argv)
 {
 ///////// Begin image processing /////////
-    Mat image, im_gray, im_bw, im_gray_edges;
+    Mat image, im_gray, im_bw_canny, im_gray_edges;
     //cvtColor(cv_ptr->image, im_gray, COLOR_BGR2GRAY);
     char* imageName = argv[1];
     image = imread( imageName, 1 );
     cvtColor(image, im_gray, COLOR_BGR2GRAY);
     Mat bw;
-	  Canny(im_gray, im_bw, 100, 300, 5);
+	  Canny(im_gray, im_bw_canny, 100, 300, 5);
     GaussianBlur(im_gray, im_gray, Size(ksize, ksize), sigma, sigma);
     
     ///////// Getting working table limits
@@ -69,7 +69,7 @@ int main(int argc, char** argv)
     double largest_rectangle_area = 0;
     if (working_table_limits_found == 0)
     {
-      findContours(im_bw, contours_table, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE); // Find the rectangles in the image
+      findContours(im_bw_canny, contours_table, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE); // Find the rectangles in the image
       for (int i = 0; i < contours_table.size(); i ++)                         // iterate through each contour.
       { 
         approxPolyDP(Mat(contours_table[i]), approx, arcLength(Mat(contours_table[i]), true)*0.02, true);
@@ -98,7 +98,7 @@ int main(int argc, char** argv)
           // to determine the shape of the contour
           if (vtc == 4 && mincos >= -0.1 && maxcos <= 0.3)
           {
-            setLabel(im_bw, "RECT", contours_table[i]);
+            setLabel(im_bw_canny, "RECT", contours_table[i]);
             // Find the greatest rectangle
             Rect r = boundingRect(contours_table[i]);
             double rectangle_area = r.height*r.width; 
@@ -124,18 +124,18 @@ int main(int argc, char** argv)
     }
 
     // If the working table is found work with coordinates of working table, otherwise whole image
-    Mat im_gray_objects, im_bw_objects;
+    Mat im_gray_, im_bw_objects;
     if (working_table_limits_found == 1)
     {
-      im_gray_objects = im_gray(working_table).clone();
+      im_gray_ = im_gray(working_table).clone();
     } else {
-      im_gray_objects = im_gray;
+      im_gray_ = im_gray;
     }
 
     ///////// End working table limits
 
     //////// Find the object centers based on 1. thresholding of image (the "whitest" objects) and 2. Circle shape
-    threshold(im_gray_objects, im_bw_objects, object_threshold, 255.0, THRESH_BINARY);
+    threshold(im_gray_, im_bw_objects, object_threshold, 255.0, THRESH_BINARY);
     
     // Apply (uncomment) erosion if the objects are too close together
     /*Mat element = getStructuringElement( MORPH_ELLIPSE, 
@@ -181,12 +181,13 @@ int main(int argc, char** argv)
     }
     //////// End of object centers
 
-    //////// Find the objects centers
-
+    //////// Find the holes centers
+    Mat im_bw_canny_;
+    Canny(im_gray_, im_bw_canny_, 100, 300, 5);
     vector< vector <Point> > contours_holes;
     vector<Point> approx_holes;
 
-    findContours(im_bw, contours_holes, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE); // Find the circles in the image based on Canny edge d.
+    findContours(im_bw_canny_, contours_holes, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE); // Find the circles in the image based on Canny edge d.
     vector<Point2f>center_holes;
     vector<float>radius_vect_holes;
     vector<Point2f>true_object_center (center_objects.size());
@@ -211,7 +212,7 @@ int main(int argc, char** argv)
           if (abs(1 - ((double)r.width / r.height)) <= 0.3 &&
               abs(1 - (area / (CV_PI * pow(radius, 2)))) <= 0.3)
             {
-              //setLabel(im_bw, "CIR", contours_holes[i]);
+              //setLabel(im_bw_canny_, "CIR", contours_holes[i]);
               minEnclosingCircle( (Mat)contours_holes[i], center_holes[i], radius_vect_holes[i] );
 
               for (int j = 0; j < center_objects.size(); j++)
@@ -229,6 +230,16 @@ int main(int argc, char** argv)
             }
         }
         if (objects_flag[i] != 1) {
+            for (int j = 0; j < center_holes.size(); j++)
+            {
+              if (center_holes[i].x < (center_holes[j].x + center_proximity) && 
+              center_holes[i].x > (center_holes[j].x - center_proximity) && 
+              center_holes[i].y < (center_holes[j].y + center_proximity) && 
+              center_holes[i].y > (center_holes[j].y - center_proximity))
+              {
+                center_holes.erase(center_holes.begin() + j);
+              }
+            }
           // draw red circle if it is a hole -- not working yet
           circle( image, center_holes[i], (int)radius_vect_holes[i], Scalar ( 0,0,255), 2, 8, 0 );
           center_holes.push_back(center_holes[i]); // Fill the vector
@@ -246,12 +257,12 @@ int main(int argc, char** argv)
       }
 
       cout << center_holes.size();
-      //////// End of the objects centers
+      //////// End of the holes centers
 
       //imshow("Color image", cv_ptr->image);
       imshow("Color image", image);
 
-      //imshow(OPENCV_WINDOW, im_gray_objects);
+      imshow(OPENCV_WINDOW, im_gray_);
       //imshow("Binary", im_bw_objects);
       ///////// End image processing /////////
       waitKey(0);
